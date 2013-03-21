@@ -45,6 +45,15 @@ class InvocationProfile {
         this.hashCode = 0;
     }
 
+    public Class<?>[] getParamClasses(ClassLoader classLoader) throws ClassNotFoundException {
+        Class[] classes = new Class[paramTypes.length];
+        for (int i = 0; i < paramTypes.length; i++) {
+            String paramType = paramTypes[i];
+            classes[i] = ShadowWrangler.loadClass(paramType, classLoader);
+        }
+        return classes;
+    }
+
     private Class<?> loadClass(ClassLoader classLoader, String className) {
         try {
             return classLoader.loadClass(className);

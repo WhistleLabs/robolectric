@@ -1,5 +1,6 @@
 package org.robolectric.bytecode;
 
+import org.robolectric.internal.Implements;
 import org.robolectric.internal.RealObject;
 import org.robolectric.util.Function;
 import org.robolectric.util.Join;
@@ -16,6 +17,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import static org.fest.reflect.core.Reflection.method;
+
 public class ShadowWrangler implements ClassHandler {
     public static final Function<Object, Object> DO_NOTHING_HANDLER = new Function<Object, Object>() {
         @Override
@@ -24,6 +27,11 @@ public class ShadowWrangler implements ClassHandler {
         }
     };
     private static final boolean STRIP_SHADOW_STACK_TRACES = true;
+    public static final Plan DO_NOTHING_PLAN = new Plan() {
+        @Override public Object run(Object instance, Object[] params) throws Exception {
+            return null;
+        }
+    };
 
     public boolean debug = false;
     boolean strictI18n = false;
@@ -36,7 +44,11 @@ public class ShadowWrangler implements ClassHandler {
     };
     private final ShadowMap shadowMap;
     private final Map<Class, MetaShadow> metaShadowMap = new HashMap<Class, MetaShadow>();
-    private final Map<String, Plan> planCache = new HashMap<String, Plan>();
+    private final Map<String, Plan> planCache = new LinkedHashMap<String, Plan>() {
+        @Override protected boolean removeEldestEntry(Map.Entry<String, Plan> eldest) {
+            return size() > 500;
+        }
+    };
     private boolean logMissingShadowMethods = false;
 
     public ShadowWrangler(ShadowMap shadowMap) {
@@ -71,6 +83,10 @@ public class ShadowWrangler implements ClassHandler {
         }
     }
 
+    @Override public Object initializing(Object instance) {
+        return createShadowFor(instance);
+    }
+
     @Override
     public Object methodInvoked(Class clazz, String methodName, Object instance, String[] paramTypes, Object[] params) throws Exception {
         InvocationPlan invocationPlan = getInvocationPlan(clazz, methodName, instance, paramTypes);
@@ -87,12 +103,60 @@ public class ShadowWrangler implements ClassHandler {
 
     private Plan calculatePlan(String signature, boolean isStatic, Class<?> theClass) {
         final InvocationProfile invocationProfile = new InvocationProfile(signature, isStatic, theClass.getClassLoader());
-        final InvocationPlan invocationPlan = new InvocationPlan(shadowMap, invocationProfile, InvocationPlan.getShadowClass(shadowMap, invocationProfile));
-        return new Plan() {
-            @Override public Object run(Object instance, Object[] params) throws Exception {
-                return invocationPlan.invoke(instance, params, ShadowWrangler.this);
+        ShadowConfig shadowConfig = shadowMap.get(invocationProfile.clazz);
+        if (shadowConfig == null) {
+            return strict(invocationProfile) ? null : DO_NOTHING_PLAN;
+        } else {
+            try {
+                ClassLoader classLoader = theClass.getClassLoader();
+                Class<?> shadowClass = classLoader.loadClass(shadowConfig.shadowClassName);
+                final Method shadowMethod = shadowClass.getMethod(invocationProfile.methodName, invocationProfile.getParamClasses(classLoader));
+                Class<?> declaredShadowedClass = getShadowedClass(shadowMethod);
+
+                if (declaredShadowedClass.equals(Object.class)) {
+                    // e.g. for equals(), hashCode(), toString()
+                    return null;
+                }
+
+                if (strict(invocationProfile) && !declaredShadowedClass.equals(invocationProfile.clazz)) {
+                    if (!invocationProfile.methodName.equals(InstrumentingClassLoader.CONSTRUCTOR_METHOD_NAME)) {
+                        System.out.println("[DEBUG] Method " + shadowMethod + " is meant to shadow " + declaredShadowedClass + ", not " + invocationProfile.clazz);
+                    }
+                    return strict(invocationProfile) ? null : DO_NOTHING_PLAN;
+                }
+                return new ShadowMethodPlan(shadowMethod);
+            } catch (ClassNotFoundException e) {
+                throw new RuntimeException(e);
+            } catch (NoSuchMethodException e) {
+                return shadowConfig.callThroughByDefault ? null : strict(invocationProfile) ? null : DO_NOTHING_PLAN;
             }
-        };
+        }
+    }
+
+    private boolean strict(InvocationProfile invocationProfile) {
+        return invocationProfile.clazz.getName().startsWith("android.support");
+    }
+
+    private Class<?> getShadowedClass(Method shadowMethod) {
+        Class<?> shadowingClass = shadowMethod.getDeclaringClass();
+        if (shadowingClass.equals(Object.class)) {
+            return Object.class;
+        }
+
+        Implements implementsAnnotation = shadowingClass.getAnnotation(Implements.class);
+        if (implementsAnnotation == null) {
+            throw new RuntimeException(shadowingClass + " has no @" + Implements.class.getSimpleName() + " annotation");
+        }
+        String shadowedClassName = implementsAnnotation.className();
+        if (shadowedClassName.isEmpty()) {
+            return implementsAnnotation.value();
+        } else {
+            try {
+                return shadowingClass.getClassLoader().loadClass(shadowedClassName);
+            } catch (ClassNotFoundException e) {
+                throw new RuntimeException(e);
+            }
+        }
     }
 
     private InvocationPlan getInvocationPlan(Class clazz, String methodName, Object instance, String[] paramTypes) {
@@ -184,14 +248,8 @@ public class ShadowWrangler implements ClassHandler {
         return clazz;
     }
 
-    public Object shadowFor(Object instance) {
-        Field field = RobolectricInternals.getShadowField(instance);
-        field.setAccessible(true);
-        Object shadow = readField(instance, field);
-
-        if (shadow != null) {
-            return shadow;
-        }
+    public Object createShadowFor(Object instance) {
+        Object shadow;
 
         String shadowClassName = shadowMap.getShadowClassName(instance.getClass());
 
@@ -207,7 +265,6 @@ public class ShadowWrangler implements ClassHandler {
             } else {
                 shadow = shadowClass.newInstance();
             }
-            field.set(instance, shadow);
 
             injectRealObjectOn(shadow, shadowClass, instance);
 
@@ -261,16 +318,18 @@ public class ShadowWrangler implements ClassHandler {
         return constructor;
     }
 
-    public Object shadowOf(Object instance) {
+    public static Object shadowOf(Object instance) {
         if (instance == null) {
             throw new NullPointerException("can't get a shadow for null");
         }
-        Field field = RobolectricInternals.getShadowField(instance);
-        Object shadow = readField(instance, field);
-        if (shadow == null) {
-            shadow = shadowFor(instance);
-        }
-        return shadow;
+        return method(AsmInstrumentingClassLoader.GET_ROBO_DATA_METHOD_NAME).withReturnType(Object.class).in(instance).invoke();
+//
+//        Field field = RobolectricInternals.getShadowField(instance);
+//        Object shadow = readField(instance, field);
+//        if (shadow == null) {
+//            shadow = shadowFor(instance);
+//        }
+//        return shadow;
     }
 
     private Object readField(Object target, Field field) {
@@ -311,6 +370,23 @@ public class ShadowWrangler implements ClassHandler {
                 shadowClass = shadowClass.getSuperclass();
             }
 
+        }
+    }
+
+    private static class ShadowMethodPlan implements Plan {
+        private final Method shadowMethod;
+
+        public ShadowMethodPlan(Method shadowMethod) {
+            this.shadowMethod = shadowMethod;
+        }
+
+        @Override public Object run(Object instance, Object[] params) throws Throwable {
+            Object shadow = instance == null ? null : shadowOf(instance);
+            try {
+                return shadowMethod.invoke(shadow, params);
+            } catch (InvocationTargetException e) {
+                throw e.getCause();
+            }
         }
     }
 }

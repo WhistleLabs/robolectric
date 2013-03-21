@@ -1,7 +1,6 @@
 package org.robolectric.bytecode;
 
 import android.view.View;
-import org.fest.reflect.core.Reflection;
 import org.fest.reflect.method.Invoker;
 
 import java.lang.reflect.Constructor;
@@ -10,6 +9,8 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.HashMap;
 import java.util.Map;
+
+import static org.fest.reflect.core.Reflection.method;
 
 @SuppressWarnings({"UnusedDeclaration"})
 public class RobolectricInternals {
@@ -82,6 +83,11 @@ public class RobolectricInternals {
     @SuppressWarnings({"UnusedDeclaration"})
     public static void classInitializing(Class clazz) throws Exception {
         classHandler.classInitializing(clazz);
+    }
+
+    @SuppressWarnings({"UnusedDeclaration"})
+    public static Object initializing(Object instance) throws Exception {
+        return classHandler.initializing(instance);
     }
 
     @SuppressWarnings({"UnusedDeclaration"})
@@ -185,6 +191,6 @@ public class RobolectricInternals {
 
     public static Invoker<Void> getConstructor(Class<?> clazz, View realView, Class... parameterTypes) {
         String name = directMethodName(clazz.getName(), InstrumentingClassLoader.CONSTRUCTOR_METHOD_NAME);
-        return Reflection.method(name).withParameterTypes(parameterTypes).in(realView);
+        return method(name).withParameterTypes(parameterTypes).in(realView);
     }
 }

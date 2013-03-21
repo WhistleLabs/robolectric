@@ -52,9 +52,12 @@ public class AsmInstrumentingClassLoader extends ClassLoader implements Opcodes,
     private static final Type PLAN_TYPE = Type.getType(ClassHandler.Plan.class);
     private static final Method PLAN_RUN_METHOD = new Method("run", OBJECT_TYPE, new Type[]{OBJECT_TYPE, Type.getType(Object[].class)});
     private static final Type THROWABLE_TYPE = Type.getType(Throwable.class);
+    private static final Method INITIALIZING_METHOD = new Method("initializing", "(Ljava/lang/Object;)Ljava/lang/Object;");
     private static final Method METHOD_INVOKED_METHOD = new Method("methodInvoked", "(Ljava/lang/String;ZLjava/lang/Class;)L" + PLAN_TYPE.getInternalName() + ";");
     private static final Method HANDLE_EXCEPTION_METHOD = new Method("handleException", THROWABLE_TYPE, new Type[]{THROWABLE_TYPE});
     private static final String DIRECT_OBJECT_MARKER_TYPE_DESC = Type.getObjectType(DirectObjectMarker.class.getName().replace('.', '/')).getDescriptor();
+    private static final String INIT_METHOD_NAME = "$$robo$init";
+    static final String GET_ROBO_DATA_METHOD_NAME = "$$robo$getData";
 
     private static boolean debug = true;
 
@@ -147,6 +150,9 @@ public class AsmInstrumentingClassLoader extends ClassLoader implements Opcodes,
                 return defineClass(className, bytes, 0, bytes.length);
             } catch (Exception e) {
                 throw new ClassNotFoundException("couldn't load " + className, e);
+            } catch (OutOfMemoryError e) {
+                System.out.println("couldn't load " + className + " in " + this);
+                throw e;
             }
         } else {
             throw new IllegalStateException("how did we get here? " + className);
@@ -395,6 +401,8 @@ public class AsmInstrumentingClassLoader extends ClassLoader implements Opcodes,
                 MyGenerator m = new MyGenerator(defaultConstructor);
                 m.loadThis();
                 m.visitMethodInsn(INVOKESPECIAL, classNode.superName, "<init>", "()V");
+                m.loadThis();
+                m.invokeVirtual(classType, new Method(INIT_METHOD_NAME, "()V"));
                 generateCallToClassHandler(defaultConstructor, CONSTRUCTOR_METHOD_NAME, m);
                 m.endMethod();
                 classNode.methods.add(defaultConstructor);
@@ -429,6 +437,33 @@ public class AsmInstrumentingClassLoader extends ClassLoader implements Opcodes,
 //            for (MethodNode method : (List<MethodNode>)classNode.methods) {
 //                System.out.println("method = " + method.name + method.desc);
 //            }
+
+            {
+                MethodNode initMethodNode = new MethodNode(ACC_PROTECTED, INIT_METHOD_NAME, "()V", null, null);
+                MyGenerator m = new MyGenerator(initMethodNode);
+                Label alreadyInitialized = new Label();
+                m.loadThis();                                         // this
+                m.getField(classType, "__robo_data__", OBJECT_TYPE);  // contents of __robo_data__
+                m.ifNonNull(alreadyInitialized);
+                m.loadThis();                                         // this
+                m.loadThis();                                         // this, this
+                m.invokeStatic(ROBOLECTRIC_INTERNALS_TYPE, INITIALIZING_METHOD); // this, __robo_data__
+                m.putField(classType, "__robo_data__", OBJECT_TYPE);
+                m.mark(alreadyInitialized);
+                m.returnValue();
+                m.endMethod();
+                classNode.methods.add(initMethodNode);
+            }
+
+            {
+                MethodNode initMethodNode = new MethodNode(ACC_PRIVATE, GET_ROBO_DATA_METHOD_NAME, "()Ljava/lang/Object;", null, null);
+                MyGenerator m = new MyGenerator(initMethodNode);
+                m.loadThis();                                         // this
+                m.getField(classType, "__robo_data__", OBJECT_TYPE);  // contents of __robo_data__
+                m.returnValue();
+                m.endMethod();
+                classNode.methods.add(initMethodNode);
+            }
 
             if (className.equals("android.os.Build$VERSION")) {
                 for (Object field : classNode.fields) {
@@ -478,6 +513,8 @@ public class AsmInstrumentingClassLoader extends ClassLoader implements Opcodes,
 
             methodNode.instructions = removedInstructions;
 
+            m.loadThis();
+            m.invokeVirtual(classType, new Method(INIT_METHOD_NAME, "()V"));
             generateCallToClassHandler(method, CONSTRUCTOR_METHOD_NAME, m);
 
             m.endMethod();

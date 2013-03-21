@@ -107,11 +107,13 @@ public class RobolectricWiringTest {
         Class<?>[] parameterTypes = shadowMethod.getParameterTypes();
         String methodName = shadowMethod.getName();
         try {
-            return implementedClass.getMethod(methodName, parameterTypes);
-        } catch (NoSuchMethodException e1) {
+            return implementedClass.getDeclaredMethod(methodName, parameterTypes);
+        } catch (NoSuchMethodException e2) {
             try {
-                return implementedClass.getDeclaredMethod(methodName, parameterTypes);
-            } catch (NoSuchMethodException e2) {
+                Method method = implementedClass.getMethod(methodName, parameterTypes);
+                mismatches.add("unexpected " + methodName + " was found on " + shadowMethod.getDeclaringClass());
+                return null;
+            } catch (NoSuchMethodException e1) {
                 return null;
             }
         }

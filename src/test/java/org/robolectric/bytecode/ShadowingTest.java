@@ -64,7 +64,7 @@ public class ShadowingTest {
     @Implements(ClassWithProtectedMethod.class)
     public static class ShadowClassWithProtectedMethod {
         @Implementation
-        protected String getName() {
+        public String getName() {
             return "shadow name";
         }
     }
@@ -188,7 +188,7 @@ public class ShadowingTest {
 
     @Test
     public void shouldDelegateToObjectToStringIfShadowHasNone() throws Exception {
-        assertTrue(new View(Robolectric.application).toString().startsWith("android.view.View@"));
+        assertThat(new View(Robolectric.application).toString()).startsWith("android.view.View@");
     }
 
     @Test

@@ -186,6 +186,7 @@ class InvocationPlan {
         } else {
             Method originalMethod;
             try {
+                System.out.println("originalMethod = " + methodName + " on " + originalClass.getName() + ": " + originalClass.getClassLoader());
                 originalMethod = originalClass.getDeclaredMethod(methodName, paramClasses);
             } catch (NoSuchMethodException e) {
                 throw new RuntimeException(e);

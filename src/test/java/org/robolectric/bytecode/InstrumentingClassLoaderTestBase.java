@@ -484,6 +484,10 @@ abstract public class InstrumentingClassLoaderTestBase { // don't end in "Test" 
         public void classInitializing(Class clazz) {
         }
 
+        @Override public Object initializing(Object instance) {
+            return null;
+        }
+
         @Override
         public Object methodInvoked(Class clazz, String methodName, Object instance, String[] paramTypes, Object[] params) throws Throwable {
             StringBuilder buf = new StringBuilder();
