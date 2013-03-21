@@ -30,7 +30,6 @@ public class ThreadSafetyTest {
 
             instrumentedThread.join();
             Object shadowFromOtherThread = field.get(instrumentedThread);
-            assertThat(instrumentedThread.finished).isTrue();
             assertThat(shadowFromThisThread).isSameAs(shadowFromOtherThread);
         }
     }
@@ -38,12 +37,10 @@ public class ThreadSafetyTest {
     @Instrument
     public static class InstrumentedThread extends Thread {
         InstrumentedThreadShadow shadowFromOtherThread;
-        boolean finished = false;
 
         @Override
         public void run() {
             shadowFromOtherThread = shadowOf_(this);
-            finished = true;
         }
     }
 
@@ -52,7 +49,7 @@ public class ThreadSafetyTest {
         @RealObject InstrumentedThread realObject;
         @Implementation
         public void run() {
-            directlyOn(realObject, InstrumentedThread.class).run();
+            directlyOn(realObject, InstrumentedThread.class, "run").invoke();
         }
     }
 }

@@ -45,7 +45,6 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.lang.annotation.Annotation;
-import java.lang.ref.SoftReference;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.net.MalformedURLException;
@@ -327,15 +326,17 @@ public class RobolectricTestRunner extends BlockJUnit4ClassRunner {
     private SdkEnvironment getEnvironment(AndroidManifest appManifest, Config config) {
         SdkConfig sdkVersion = pickSdkVersion(appManifest, config);
         synchronized (envHolder) {
-            SoftReference<SdkEnvironment> reference = envHolder.sdkToEnvironment.get(sdkVersion);
-            SdkEnvironment sdkEnvironment = reference == null ? null : reference.get();
+//            SoftReference<SdkEnvironment> reference = envHolder.sdkToEnvironmentSoft.get(sdkVersion);
+//            SdkEnvironment sdkEnvironment = reference == null ? null : reference.get();
+            SdkEnvironment sdkEnvironment = envHolder.sdkToEnvironment.get(sdkVersion);
             if (sdkEnvironment == null) {
-                if (reference != null) {
-                    System.out.println("DEBUG: ********************* GC'ed SdkEnvironment reused!");
-                }
+//                if (reference != null) {
+//                    System.out.println("DEBUG: ********************* GC'ed SdkEnvironment reused!");
+//                }
 
                 sdkEnvironment = createSdkEnvironment(appManifest, config, sdkVersion);
-                envHolder.sdkToEnvironment.put(sdkVersion, new SoftReference<SdkEnvironment>(sdkEnvironment));
+//                envHolder.sdkToEnvironmentSoft.put(sdkVersion, new SoftReference<SdkEnvironment>(sdkEnvironment));
+                envHolder.sdkToEnvironment.put(sdkVersion, sdkEnvironment);
             }
             return sdkEnvironment;
         }
