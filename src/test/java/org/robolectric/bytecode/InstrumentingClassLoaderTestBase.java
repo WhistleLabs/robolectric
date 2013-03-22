@@ -520,7 +520,7 @@ abstract public class InstrumentingClassLoaderTestBase { // don't end in "Test" 
         }
 
         @Override
-        public Object intercept(String clazzName, String methodName, Object instance, Object[] paramTypes, Object[] params) throws Throwable {
+        public Object intercept(String clazzName, Object instance, Object[] paramTypes, Class theClass) throws Throwable {
             return null;
         }
 

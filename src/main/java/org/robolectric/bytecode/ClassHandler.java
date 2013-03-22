@@ -9,7 +9,7 @@ public interface ClassHandler {
 
     Plan methodInvoked(String signature, boolean isStatic, Class<?> theClass);
 
-    Object intercept(String className, String methodName, Object instance, Object[] paramTypes, Object[] params) throws Throwable;
+    Object intercept(String signature, Object instance, Object[] paramTypes, Class theClass) throws Throwable;
 
     // todo: definitely shouldn't live here
     void setStrictI18n(boolean strictI18n);

@@ -11,6 +11,7 @@ class InvocationProfile {
     final boolean isStatic;
     final String[] paramTypes;
     private final int hashCode;
+    private boolean isSpecial;
 
     InvocationProfile(Class clazz, Class shadowClass, String methodName, boolean isStatic, String[] paramTypes) {
         this.clazz = clazz;
@@ -18,6 +19,7 @@ class InvocationProfile {
         this.methodName = methodName;
         this.isStatic = isStatic;
         this.paramTypes = paramTypes;
+        this.isSpecial = false;
 
         // calculate hashCode early
         int result = clazz.hashCode();
@@ -43,6 +45,10 @@ class InvocationProfile {
         this.isStatic = isStatic;
         this.shadowClass = null;
         this.hashCode = 0;
+
+        this.isSpecial = methodSignature.endsWith("/equals(Ljava/lang/Object;)Z")
+                || methodSignature.endsWith("/hashCode()I")
+                || methodSignature.endsWith("/toString()Ljava/lang/String;");
     }
 
     public Class<?>[] getParamClasses(ClassLoader classLoader) throws ClassNotFoundException {
@@ -81,5 +87,13 @@ class InvocationProfile {
     @Override
     public int hashCode() {
         return hashCode;
+    }
+
+    public boolean isSpecial() {
+        return isSpecial;
+    }
+
+    public void setSpecial(boolean special) {
+        isSpecial = special;
     }
 }

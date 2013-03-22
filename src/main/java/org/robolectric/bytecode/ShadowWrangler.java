@@ -33,7 +33,7 @@ public class ShadowWrangler implements ClassHandler {
         }
     };
 
-    public boolean debug = false;
+    public boolean debug = true;
     boolean strictI18n = false;
 
     private final Map<InvocationProfile, InvocationPlan> invocationPlans = new LinkedHashMap<InvocationProfile, InvocationPlan>() {
@@ -95,7 +95,6 @@ public class ShadowWrangler implements ClassHandler {
 
     @Override
     synchronized public Plan methodInvoked(String signature, boolean isStatic, Class<?> theClass) {
-//        System.out.println("signature = " + signature);
         if (planCache.containsKey(signature)) return planCache.get(signature);
         Plan plan = calculatePlan(signature, isStatic, theClass);
         planCache.put(signature, plan);
@@ -105,7 +104,21 @@ public class ShadowWrangler implements ClassHandler {
     private Plan calculatePlan(String signature, boolean isStatic, Class<?> theClass) {
         final InvocationProfile invocationProfile = new InvocationProfile(signature, isStatic, theClass.getClassLoader());
         ShadowConfig shadowConfig = shadowMap.get(invocationProfile.clazz);
+
+        // enable call-through for for inner classes if an outer class has call-through turned on
+        Class<?> clazz = invocationProfile.clazz;
+        while (shadowConfig == null && clazz.getDeclaringClass() != null) {
+            clazz = clazz.getDeclaringClass();
+            ShadowConfig outerConfig = shadowMap.get(clazz);
+            if (outerConfig != null && outerConfig.callThroughByDefault) {
+                shadowConfig = new ShadowConfig(Object.class.getName(), true);
+            }
+        }
+
         if (shadowConfig == null) {
+            if (debug) {
+                System.out.println("[DEBUG] no shadow found for " + signature + "; " + describeIfStrict(invocationProfile));
+            }
             return strict(invocationProfile) ? null : DO_NOTHING_PLAN;
         } else {
             try {
@@ -120,22 +133,32 @@ public class ShadowWrangler implements ClassHandler {
                 }
 
                 if (strict(invocationProfile) && !declaredShadowedClass.equals(invocationProfile.clazz)) {
-                    if (!invocationProfile.methodName.equals(InstrumentingClassLoader.CONSTRUCTOR_METHOD_NAME)) {
+                    if (debug && !invocationProfile.methodName.equals(InstrumentingClassLoader.CONSTRUCTOR_METHOD_NAME)) {
                         System.out.println("[DEBUG] Method " + shadowMethod + " is meant to shadow " + declaredShadowedClass + ", not " + invocationProfile.clazz);
                     }
                     return strict(invocationProfile) ? null : DO_NOTHING_PLAN;
+                }
+                if (debug) {
+                    System.out.println("[DEBUG] found shadow for " + signature + "; will call " + shadowMethod);
                 }
                 return new ShadowMethodPlan(shadowMethod);
             } catch (ClassNotFoundException e) {
                 throw new RuntimeException(e);
             } catch (NoSuchMethodException e) {
+                if (debug) {
+                    System.out.println("[DEBUG] no shadow for " + signature + " found on " + shadowConfig.shadowClassName + "; " + describeIfStrict(invocationProfile));
+                }
                 return shadowConfig.callThroughByDefault ? null : strict(invocationProfile) ? null : DO_NOTHING_PLAN;
             }
         }
     }
 
+    private String describeIfStrict(InvocationProfile invocationProfile) {
+        return (strict(invocationProfile) ? "will call real code" : "will do no-op");
+    }
+
     private boolean strict(InvocationProfile invocationProfile) {
-        return invocationProfile.clazz.getName().startsWith("android.support");
+        return invocationProfile.clazz.getName().startsWith("android.support") || invocationProfile.isSpecial();
     }
 
     private Class<?> getShadowedClass(Method shadowMethod) {
@@ -175,17 +198,17 @@ public class ShadowWrangler implements ClassHandler {
     }
 
     @Override
-    public Object intercept(String className, String methodName, Object instance, Object[] paramTypes, Object[] params) throws Throwable {
-        if (debug)
-            System.out.println("DEBUG: intercepted call to " + className + "." + methodName + "(" + Join.join(", ", params) + ")");
+    public Object intercept(String signature, Object instance, Object[] paramTypes, Class theClass) throws Throwable {
+        final InvocationProfile invocationProfile = new InvocationProfile(signature, instance == null, theClass.getClassLoader());
 
-        return getInterceptionHandler(className, methodName).call(instance);
+        if (debug)
+            System.out.println("DEBUG: intercepted call to " + signature + "." + invocationProfile.methodName + "(" + Join.join(", ", invocationProfile.paramTypes) + ")");
+
+        return getInterceptionHandler(invocationProfile).call(instance);
     }
 
-    public Function<Object, Object> getInterceptionHandler(String className, String methodName) {
-        className = className.replace('/', '.');
-
-        if (className.equals(LinkedHashMap.class.getName()) && methodName.equals("eldest")) {
+    public Function<Object, Object> getInterceptionHandler(InvocationProfile invocationProfile) {
+        if (invocationProfile.clazz.equals(LinkedHashMap.class) && invocationProfile.methodName.equals("eldest")) {
             return new Function<Object, Object>() {
                 @Override
                 public Object call(Object value) {

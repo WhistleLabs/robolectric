@@ -104,9 +104,9 @@ public class RobolectricInternals {
     }
 
     @SuppressWarnings({"UnusedDeclaration"})
-    public static Object intercept(String className, String methodName, Object instance, Object[] paramTypes, Object[] params) throws Throwable {
+    public static Object intercept(String signature, Object instance, Object[] params, Class theClass) throws Throwable {
         try {
-            return classHandler.intercept(className, methodName, instance, paramTypes, params);
+            return classHandler.intercept(signature,  instance, params, theClass);
         } catch(java.lang.LinkageError e) {
             throw new Exception(e);
         }

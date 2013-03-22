@@ -237,7 +237,7 @@ public class ShadowApplication extends ShadowContextWrapper {
         return true;
     }
 
-    @Implementation
+    @Override @Implementation
     public void unbindService(final ServiceConnection serviceConnection) {
         unboundServiceConnections.add(serviceConnection);
         shadowOf(Looper.getMainLooper()).post(new Runnable() {

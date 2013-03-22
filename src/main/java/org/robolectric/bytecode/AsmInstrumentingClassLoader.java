@@ -394,7 +394,7 @@ public class AsmInstrumentingClassLoader extends ClassLoader implements Opcodes,
                 }
             }
 
-            classNode.fields.add(new FieldNode(ACC_PUBLIC, CLASS_HANDLER_DATA_FIELD_NAME, OBJECT_DESC, OBJECT_DESC, null));
+            classNode.fields.add(0, new FieldNode(ACC_PUBLIC, CLASS_HANDLER_DATA_FIELD_NAME, OBJECT_DESC, OBJECT_DESC, null));
 
             if (!foundMethods.contains("<init>()V")) {
                 MethodNode defaultConstructor = new MethodNode(ACC_PUBLIC, "<init>", "()V", "()V", null);
@@ -443,12 +443,12 @@ public class AsmInstrumentingClassLoader extends ClassLoader implements Opcodes,
                 MyGenerator m = new MyGenerator(initMethodNode);
                 Label alreadyInitialized = new Label();
                 m.loadThis();                                         // this
-                m.getField(classType, "__robo_data__", OBJECT_TYPE);  // contents of __robo_data__
+                m.getField(classType, CLASS_HANDLER_DATA_FIELD_NAME, OBJECT_TYPE);  // contents of __robo_data__
                 m.ifNonNull(alreadyInitialized);
                 m.loadThis();                                         // this
                 m.loadThis();                                         // this, this
                 m.invokeStatic(ROBOLECTRIC_INTERNALS_TYPE, INITIALIZING_METHOD); // this, __robo_data__
-                m.putField(classType, "__robo_data__", OBJECT_TYPE);
+                m.putField(classType, CLASS_HANDLER_DATA_FIELD_NAME, OBJECT_TYPE);
                 m.mark(alreadyInitialized);
                 m.returnValue();
                 m.endMethod();
@@ -459,7 +459,7 @@ public class AsmInstrumentingClassLoader extends ClassLoader implements Opcodes,
                 MethodNode initMethodNode = new MethodNode(ACC_PRIVATE, GET_ROBO_DATA_METHOD_NAME, "()Ljava/lang/Object;", null, null);
                 MyGenerator m = new MyGenerator(initMethodNode);
                 m.loadThis();                                         // this
-                m.getField(classType, "__robo_data__", OBJECT_TYPE);  // contents of __robo_data__
+                m.getField(classType, CLASS_HANDLER_DATA_FIELD_NAME, OBJECT_TYPE);  // contents of __robo_data__
                 m.returnValue();
                 m.endMethod();
                 classNode.methods.add(initMethodNode);
@@ -657,30 +657,26 @@ public class AsmInstrumentingClassLoader extends ClassLoader implements Opcodes,
         private void interceptNastyMethod(ListIterator<AbstractInsnNode> instructions, MethodNode callingMethod, MethodInsnNode targetMethod) {
             boolean isStatic = targetMethod.getOpcode() == INVOKESTATIC;
 
-            instructions.remove();
+            instructions.remove(); // remove the method invocation
 
             // first, throw away arguments (ugh)
             for (Type type : reverse(Type.getArgumentTypes(targetMethod.desc))) {
                 instructions.add(type.getSize() == 2 ? new InsnNode(POP2) : new InsnNode(POP));
             }
 
-            instructions.add(new LdcInsnNode(targetMethod.owner)); // class name
-            if (!isStatic) instructions.add(new InsnNode(SWAP));
-
-            instructions.add(new LdcInsnNode(targetMethod.name));  // method name
+            instructions.add(new LdcInsnNode(targetMethod.owner + "/" + targetMethod.name + targetMethod.desc)); // target method signature
             if (isStatic) {
-                instructions.add(new InsnNode(ACONST_NULL));    // target object or null for static
+                instructions.add(new InsnNode(Opcodes.ACONST_NULL));  // self or null if static
             } else {
-                instructions.add(new InsnNode(SWAP));
+                instructions.add(new InsnNode(SWAP)); // keep instance at the top of the stack
             }
 
             instructions.add(new LdcInsnNode(0));
             instructions.add(new TypeInsnNode(ANEWARRAY, "java/lang/Object"));
-            instructions.add(new LdcInsnNode(0));
-            instructions.add(new TypeInsnNode(ANEWARRAY, "java/lang/Object"));
+            instructions.add(new LdcInsnNode(classType));
             instructions.add(new MethodInsnNode(INVOKESTATIC,
                     Type.getType(RobolectricInternals.class).getInternalName(), "intercept",
-                    "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/Object;[Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;"));
+                    "(Ljava/lang/String;Ljava/lang/Object;[Ljava/lang/Object;Ljava/lang/Class;)Ljava/lang/Object;"));
             Type returnType = Type.getReturnType(targetMethod.desc);
             // todo: make this honor the return value if somebody cares about what intercept returns
             switch (returnType.getSort()) {
@@ -752,13 +748,13 @@ public class AsmInstrumentingClassLoader extends ClassLoader implements Opcodes,
                 Label notInstanceOfThis = new Label();
 
                 m.loadThis();                                         // this
-                m.getField(classType, "__robo_data__", OBJECT_TYPE);  // contents of __robo_data__
+                m.getField(classType, CLASS_HANDLER_DATA_FIELD_NAME, OBJECT_TYPE);  // contents of __robo_data__
                 m.instanceOf(classType);                              // __robo_data__, is instance of same class?
                 m.visitJumpInsn(IFEQ, notInstanceOfThis); // jump if no (is not instance)
 
                 TryCatch tryCatchForProxyCall = m.tryStart(THROWABLE_TYPE);
                 m.loadThis();                                         // this
-                m.getField(classType, "__robo_data__", OBJECT_TYPE);  // contents of __robo_data__
+                m.getField(classType, CLASS_HANDLER_DATA_FIELD_NAME, OBJECT_TYPE);  // contents of __robo_data__
                 m.checkCast(classType);                               // __robo_data__ but cast to my class
                 m.loadArgs();                                         // __robo_data__ instance, [args]
 

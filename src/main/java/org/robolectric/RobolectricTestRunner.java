@@ -435,7 +435,6 @@ public class RobolectricTestRunner extends BlockJUnit4ClassRunner {
     }
 
     private ParallelUniverseInterface getHooksInterface(SdkEnvironment sdkEnvironment) {
-        System.out.println("sdkEnvironment = " + sdkEnvironment + "; CL = " + sdkEnvironment.getRobolectricClassLoader());
         try {
             @SuppressWarnings("unchecked")
             Class<ParallelUniverseInterface> aClass = (Class<ParallelUniverseInterface>) sdkEnvironment.getRobolectricClassLoader().loadClass(ParallelUniverse.class.getName());
